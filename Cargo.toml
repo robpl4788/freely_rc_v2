@@ -1,5 +1,4 @@
 [package]
-# TODO(1) fix `authors` and `name` if you didn't use `cargo-generate`
 authors = ["Robert <45889425+robpl4788@users.noreply.github.com>"]
 name = "freely_rc_v2"
 edition = "2024"
@@ -54,8 +53,10 @@ harness = false
 at32f4xx-pac = { version = "0.4.0", features = ["at32f421", "rt"] }
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = "0.7"
+critical-section = "1.2.0"
 defmt = "1.0"
 defmt-rtt = "1.0"
+embedded-hal = "1.0.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
 semihosting = "0.1.20"
 # TODO(4) enter your HAL here
