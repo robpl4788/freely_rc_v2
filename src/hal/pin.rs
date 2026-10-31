@@ -29,7 +29,7 @@ pub struct Pin {
 }
 
 impl Pin {
-    pub fn new(bank: Bank, number: u32) -> Self {
+    pub(super) fn new(bank: Bank, number: u32) -> Self {
         assert!(number < 16, "The pins only go up to 15");
         
         let register_block;

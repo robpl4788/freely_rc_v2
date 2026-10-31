@@ -42,8 +42,8 @@ impl Input {
         self.pin
     }
 
-    pub fn read(&mut self) -> bool {
-        self.pin.register_block.odt().read_bit(self.pin.number)
+    pub fn read(&self) -> bool {
+        self.pin.register_block.idt().read().bits() & (1 << self.pin.number) != 0
     }
 
     pub fn set_mode(&mut self, mode: InputMode) {

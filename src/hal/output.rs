@@ -22,8 +22,8 @@ pub enum DriveStrength {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OutputConfig {
     mode: OutputMode,
-    drive_strength: DriveStrength
-
+    drive_strength: DriveStrength,
+    initial_output: bool,
 }
 
 impl OutputConfig {
@@ -82,8 +82,18 @@ impl Output {
 
             }
         }
-
         self.pin.register_block.omode().set_bit(self.config.mode as u32 != 0, self.pin.number);
+        self.set(self.config.initial_output);
+    
+
+    }
+
+    pub fn set(&mut self, value: bool) {
+        match value {
+            true => self.set_high(),
+            false => self.set_low(),
+            
+        }
     }
 
     pub fn set_high(&mut self) {

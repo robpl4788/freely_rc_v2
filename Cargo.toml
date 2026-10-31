@@ -7,9 +7,9 @@ version = "0.1.0"
 
 # To run all the tests via `cargo test` the tests need to be explicitly disabled for the binary targets
 # If you use a standard main.rs file the following is sufficient:
-# [[bin]]
-# name = "freely_rc_v2"
-# test = false
+[[bin]]
+name = "freely_rc_v2"
+test = false
 
 [[bin]]
 name = "bitfield"
