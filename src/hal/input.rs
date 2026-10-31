@@ -3,7 +3,6 @@ use embedded_hal::digital::{ErrorType, InputPin};
 use crate::hal::pin::Pin;
 use crate::hal::register_extras::RegisterExtras;
 
-const INPUT_MODE: u32 = 0b00;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
@@ -27,16 +26,14 @@ impl ErrorType for Input {
 
 impl Input {
 
-    pub fn new (pin: Pin, mode: InputMode) -> Self {
-        let i = Self {
+    pub(super) fn new (pin: Pin, mode: InputMode) -> Self {
+        let mut i = Self {
             pin,
             mode,
         };
         
-
-        i.pin.register_block.cfgr().set_bits(INPUT_MODE, i.pin.number * 2, 2);
         
-        i.pin.register_block.pull().set_bits(i.mode as u32, i.pin.number * 2, 2);
+        i.set_mode(mode);
 
         i
     }
@@ -49,6 +46,12 @@ impl Input {
         self.pin.register_block.odt().read_bit(self.pin.number)
     }
 
+    pub fn set_mode(&mut self, mode: InputMode) {
+        self.mode = mode;
+
+        self.pin.register_block.pull().set_bits(mode as u32, self.pin.number * 2, 2);
+    }
+
 }
 
 impl InputPin for Input {
@@ -59,6 +62,6 @@ impl InputPin for Input {
 
     fn is_low(&mut self) -> Result<bool, Self::Error> {
         
-        Ok::<bool, core::convert::Infallible>(self.read() == false)
+        Ok(self.read() == false)
     }
 }
