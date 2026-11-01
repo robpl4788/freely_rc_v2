@@ -1,11 +1,13 @@
 use crate::hal::{pin::Pin, register_extras::RegisterExtras};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-
 static INITIALISED: AtomicBool = AtomicBool::new(false);
 
 pub struct Peripherals {
-    pac: at32f4xx_pac::at32f421::Peripherals,
+    pub(super) pac: at32f4xx_pac::at32f421::Peripherals,
+
+    pub clk_hz: u32,
+
     
     pub pin_a0: Option<Pin>,
     pub pin_a1: Option<Pin>,
@@ -62,6 +64,7 @@ impl Peripherals {
 
         let mut result = Self { 
             pac,
+            clk_hz: 8_000_000, // reset clock, see the clock notes
 
             pin_a0: Some(Pin::new(super::pin::Bank::A, 0)), 
             pin_a1: Some(Pin::new(super::pin::Bank::A, 1)), 
@@ -107,16 +110,11 @@ impl Peripherals {
             pin_f7: Some(Pin::new(super::pin::Bank::F, 7)), 
         };
 
+
+        result.init_clock_120mhz();
         result.init_gpio();
 
         Some(result)
     }
 
-    fn init_gpio(&mut self) {
-        // Enable clocks for gpio a b c
-        self.pac.CRM.ahben().set_bits(0b111, 17, 3);
-
-        // Enable clocks for gpio f
-        self.pac.CRM.ahben().set_bit(true, 22);
-    }
 }

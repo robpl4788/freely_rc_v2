@@ -26,10 +26,10 @@ fn main() -> ! {
 
     let mut a_high = peripherals.pin_a10.take().expect("Already took pin").into_output(OutputConfig::default());
     let mut a_low = peripherals.pin_b1.take().expect("Already took pin").into_output(OutputConfig::default());
-    let b_high = peripherals.pin_a9.take().expect("Already took pin").into_output(OutputConfig::default());
-    let b_low = peripherals.pin_b0.take().expect("Already took pin").into_output(OutputConfig::default());
-    let c_high = peripherals.pin_a8.take().expect("Already took pin").into_output(OutputConfig::default());
-    let c_low = peripherals.pin_a7.take().expect("Already took pin").into_output(OutputConfig::default());
+    let mut b_high = peripherals.pin_a9.take().expect("Already took pin").into_output(OutputConfig::default());
+    let mut b_low = peripherals.pin_b0.take().expect("Already took pin").into_output(OutputConfig::default());
+    let mut c_high = peripherals.pin_a8.take().expect("Already took pin").into_output(OutputConfig::default());
+    let mut c_low = peripherals.pin_a7.take().expect("Already took pin").into_output(OutputConfig::default());
 
 
     let a_emf = peripherals.pin_a4.take().expect("Already took pin").into_input(hal::input::InputMode::PullDown);
@@ -38,11 +38,20 @@ fn main() -> ! {
     
     loop {
         a_high.set_high();
-        
-        delay.delay_us(500);
+        b_low.set_high();
+        delay.delay_us(25);
   
         a_high.set_low();
-        delay.delay_us(100);
+        b_low.set_low();
+        delay.delay_us(125);
+
+        b_high.set_high();
+        a_low.set_high();
+        delay.delay_us(25);
+  
+        b_high.set_low();
+        a_low.set_low();
+        delay.delay_us(125);
        
 
         
