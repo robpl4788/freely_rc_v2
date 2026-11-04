@@ -9,8 +9,6 @@ use freely_rc_v2::hal;
 
 use cortex_m::delay::Delay;
 
-const HCLK_HZ: u32 = 8_000_000; // reset clock, see the clock notes
-
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -20,7 +18,7 @@ fn main() -> ! {
     let mut peripherals = hal::peripherals::Peripherals::init().expect("Already took peripherals");
     // peripherals.GPIOA.idt()
 
-    let mut delay = Delay::new(cp.SYST, HCLK_HZ);
+    let mut delay = Delay::new(cp.SYST, peripherals.clk_hz);
 
 
 
@@ -32,28 +30,19 @@ fn main() -> ! {
     let mut c_low = peripherals.pin_a7.take().expect("Already took pin").into_output(OutputConfig::default());
 
 
-    let a_emf = peripherals.pin_a4.take().expect("Already took pin").into_input(hal::input::InputMode::PullDown);
-    let b_emf = peripherals.pin_a5.take().expect("Already took pin").into_input(hal::input::InputMode::Float);
-    let c_emf = peripherals.pin_a0.take().expect("Already took pin").into_input(hal::input::InputMode::Float);
+    let a_emf = peripherals.pin_a4.take().expect("Already took pin");
+    let b_emf = peripherals.pin_a5.take().expect("Already took pin");
+    let c_emf = peripherals.pin_a0.take().expect("Already took pin");
     
+    let common_emf = peripherals.pin_a1.take().expect("Already took pin");
+
+    let mut comp = peripherals.take_comparator();
+
+    comp.with_non_inverting_pin(common_emf);
+    comp.with_inverting_pin(a_emf);
+
     loop {
-        a_high.set_high();
-        b_low.set_high();
-        delay.delay_us(25);
-  
-        a_high.set_low();
-        b_low.set_low();
-        delay.delay_us(125);
-
-        b_high.set_high();
-        a_low.set_high();
-        delay.delay_us(25);
-  
-        b_high.set_low();
-        a_low.set_low();
-        delay.delay_us(125);
-       
-
+       println!("{}", comp.get_value());
         
     }
 }

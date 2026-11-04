@@ -8,6 +8,10 @@ pub trait RegisterExtras {
     /// Setting 3 bits at index 2 to 0b000 would give ..x000xx
     fn set_bits(&self, set_to: u32, index: u32, bit_count: u32);
 
+    fn set_register_enum<F: RegisterField>(&self, value: F) {
+        self.set_bits(value.bits(), F::INDEX, F::BIT_COUNT);
+    }
+
     fn set_bit(&self, set_to: bool, index: u32) {
         self.set_bits(set_to.into(), index, 1);
     }
@@ -66,3 +70,49 @@ where
 }
 
 
+pub trait RegisterField {
+    const BIT_COUNT: u32;
+    const INDEX: u32;
+
+    fn bits(self) -> u32;
+
+    fn mask() -> u32 {
+        ((1u32 << Self::BIT_COUNT) - 1) << Self::INDEX
+    }
+}
+
+// Default value is the first member of the enum
+#[macro_export]
+macro_rules! register_enum {
+    (
+        $(#[$attribute:meta])*
+        $vis:vis enum $name:ident {
+            $first:ident = $first_val:expr,
+            $($variant:ident = $value:expr),* $(,)?
+        }
+        bit_count = $bits:expr,
+        index = $index:expr
+    ) => {
+        #[repr(u32)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+        $(#[$attribute])*
+        $vis enum $name {
+            #[default]
+            $first = $first_val,
+            $(
+                $variant = $value,
+            )*
+        }
+
+        impl $crate::hal::register_extras::RegisterField for $name {
+            const BIT_COUNT: u32 = $bits;
+            const INDEX: u32 = $index;
+
+            fn bits(self) -> u32 {
+                self as u32
+            }
+        }
+    };
+}
+
+pub(crate) use register_enum;

@@ -15,6 +15,7 @@ enum ModeConfiguration {
 
 
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Bank {
     A,
     B,
@@ -58,6 +59,11 @@ impl Pin {
         self.register_block.cfgr().set_bits(ModeConfiguration::Output as u32, self.number * 2, 2);
 
         Output::new(self, config)
+    }
+
+    pub fn into_analog(self) {
+        self.register_block.cfgr().set_bits(ModeConfiguration::Analog as u32, self.number * 2, 2);
+
     }
     
     

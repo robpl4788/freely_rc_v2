@@ -1,7 +1,12 @@
-use crate::hal::{pin::Pin, register_extras::RegisterExtras};
+
+use crate::hal::register_extras::RegisterExtras;
+use crate::hal::{comparator, pin::Pin};
+use crate::hal::comparator::Comparator;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 static INITIALISED: AtomicBool = AtomicBool::new(false);
+
+const SCFG_COMPARATOR_ENABLE_INDEX: u32 = 0;
 
 pub struct Peripherals {
     pub(super) pac: at32f4xx_pac::at32f421::Peripherals,
@@ -52,6 +57,8 @@ pub struct Peripherals {
     pub pin_f6: Option<Pin>,
     pub pin_f7: Option<Pin>,
 
+    comparator: Option<Comparator>,
+
 }
 
 impl Peripherals {
@@ -61,6 +68,7 @@ impl Peripherals {
         }
 
         let pac = at32f4xx_pac::at32f421::Peripherals::take().expect("Already took the pac");
+        let comparator_register_block = &pac.CMP;
 
         let mut result = Self { 
             pac,
@@ -108,6 +116,8 @@ impl Peripherals {
             pin_f1: Some(Pin::new(super::pin::Bank::F, 1)), 
             pin_f6: Some(Pin::new(super::pin::Bank::F, 6)), 
             pin_f7: Some(Pin::new(super::pin::Bank::F, 7)), 
+        
+            comparator: Some(Comparator::new()),
         };
 
 
@@ -115,6 +125,18 @@ impl Peripherals {
         result.init_gpio();
 
         Some(result)
+    }
+
+    pub fn take_comparator(&mut self) -> Comparator {
+        let mut comparator = self.comparator.take().expect("Already took comparator");
+
+        self.pac.CRM.apb2en().set_bit(
+            true, 
+            SCFG_COMPARATOR_ENABLE_INDEX);
+            
+        comparator.enable();
+
+        comparator
     }
 
 }

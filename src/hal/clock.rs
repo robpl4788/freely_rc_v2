@@ -1,35 +1,29 @@
-use crate::hal::clock::PLLReferenceClockSource::HEXT;
 use crate::hal::peripherals;
-use crate::hal::register_extras::RegisterExtras;
+use crate::hal::register_extras::{register_enum, RegisterExtras, RegisterField};
 
-#[repr(u32)]
-#[allow(dead_code)]
-enum FlashWaitCycles {
-    ZeroWait  = 0b000,  // 0 to 32 MHz
-    OneWait   = 0b001,  // 32 to 64 MHz
-    TwoWait   = 0b010,  // 64 to 96 MHz
-    ThreeWait = 0b011   // 96 Mhz and up
+register_enum! {
+    #[allow(dead_code)]
+    enum FlashWaitCycles {
+        ZeroWait  = 0b000,
+        OneWait   = 0b001,
+        TwoWait   = 0b010,
+        ThreeWait = 0b011,
+    }
+    bit_count = 3,
+    index = 0
 }
-
-const FLASH_WAIT_CYLCE_INDEX: u32 = 0;
-const FLASH_WAIT_CYLCE_COUNT: u32 = 3;
 
 const PLL_CONFIG_ENABLE_INDEX: u32 = 31;
 
-#[derive(Debug, PartialEq, Eq)]
-enum PLLReferenceClockSource {
-    HICKDivided, // 4 Mhz
-    HEXT,
-}
-
-impl PLLReferenceClockSource {
-    fn as_bool(&self) -> bool{
-        *self == HEXT
+register_enum! {
+    #[allow(dead_code)]
+    enum PLLReferenceClockSource {
+        HICKDivided = 0b0,
+        HEXT = 0b1,
     }
+    bit_count = 1,
+    index = 16
 }
-
-const PLL_REFERENCE_CLOCK_SOURCE_INDEX: u32 = 16;
-
 
 fn pll_frequency_reference(f: u32) -> u32 {
     match f {
@@ -57,25 +51,26 @@ const PLL_FREQUENCY_MULTIPLICATION_TOP_COUNT: u32 = 2;
 const PLL_ENABLE_INDEX: u32 = 24;
 const PLL_STABLE_INDEX: u32 = 25;
 
-#[repr(u32)]
-enum AutoStepEnable {
-    Disable = 0b00,
-    Enable = 0b11,
+register_enum! {
+    enum AutoStepEnable {
+        Disable = 0b00,
+        Enable = 0b11,
+    }
+    bit_count = 2,
+    index = 4
 }
 
-const AUTO_STEP_ENABLE_INDEX: u32 = 4;
-const AUTO_STEP_ENABLE_COUNT: u32 = 2;
+register_enum! {
+    #[allow(dead_code)]
+    enum SystemClock {
+        HICK = 0b00,
+        HEXT = 0b01,
+        PLL  = 0b10,
+    }
+    bit_count = 2,
+    index = 0
+}
 
-#[repr(u32)]
-#[allow(dead_code)]
-enum SystemClock {
-    HICK = 0b00,
-    HEXT = 0b01,
-    PLL  = 0b10,
-} 
-
-const SYSTEM_CLOCK_COUNT: u32 = 2;
-const SYSTEM_CLOCK_SELECT_INDEX: u32 = 0;
 const SYSTEM_CLOCK_STATUS_INDEX: u32 = 2;
 
 
@@ -85,18 +80,13 @@ impl peripherals::Peripherals {
         let target_frequency= 120_000_000;
         let crm = &self.pac.CRM;
         // Set flash wait cycles
-        self.pac.FLASH.psr().set_bits(
-            FlashWaitCycles::ThreeWait as u32,
-             FLASH_WAIT_CYLCE_INDEX, 
-             FLASH_WAIT_CYLCE_COUNT);
+        self.pac.FLASH.psr().set_register_enum(FlashWaitCycles::ThreeWait);
 
         // Clear pllcfgen
         crm.pll().set_bit(false, PLL_CONFIG_ENABLE_INDEX);
 
         //  Ensure pll is using internal high speed clock
-        crm.cfg().set_bit(
-            PLLReferenceClockSource::HICKDivided.as_bool(), 
-            PLL_REFERENCE_CLOCK_SOURCE_INDEX);
+        crm.cfg().set_register_enum(PLLReferenceClockSource::HICKDivided);
         
         // set pll input clock frequency
         crm.pll().set_bits(
@@ -117,26 +107,28 @@ impl peripherals::Peripherals {
         }
 
         // Set auto step by step system clock switch enable bit
-        crm.misc2().set_bits(AutoStepEnable::Enable as u32, AUTO_STEP_ENABLE_INDEX, AUTO_STEP_ENABLE_COUNT);
+        crm.misc2().set_register_enum(AutoStepEnable::Enable);
 
 
         // Switch system clock source to pll
 
-        crm.cfg().set_bits(SystemClock::PLL as u32, SYSTEM_CLOCK_SELECT_INDEX, SYSTEM_CLOCK_COUNT);
+        crm.cfg().set_register_enum(SystemClock::PLL);
 
         // 20 nops
         for _ in 0..20 { cortex_m::asm::nop(); }
 
         // check system clock source is pll
-        while crm.cfg().read_bits(SYSTEM_CLOCK_STATUS_INDEX, SYSTEM_CLOCK_COUNT) != SystemClock::PLL as u32 {
+        while crm.cfg().read_bits(
+            SYSTEM_CLOCK_STATUS_INDEX,
+            SystemClock::BIT_COUNT) != SystemClock::PLL.bits() {
             defmt::warn!("System Clock is not PLL")
         }
         defmt::info!("System Clock is PLL");
 
 
-
         // disable step by step switch
-        crm.misc2().set_bits(AutoStepEnable::Disable as u32, AUTO_STEP_ENABLE_INDEX, AUTO_STEP_ENABLE_COUNT);
+        crm.misc2().set_register_enum(AutoStepEnable::Disable);
+
 
         self.clk_hz = 120_000_000;
     }
