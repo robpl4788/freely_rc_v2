@@ -1,8 +1,12 @@
-pub mod pin;
+pub mod adc;
+mod clock;
+pub mod comparator;
+pub mod dma;
+mod gpio;
 pub mod input;
 pub mod output;
 pub mod peripherals;
-pub mod comparator;
+pub mod pin;
 mod register_extras;
-mod gpio;
-mod clock;
+pub mod timer;
+pub mod watchdog;

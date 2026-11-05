@@ -26,6 +26,11 @@ semihosting = "0.1.20"
 # TODO(4) enter your HAL here
 # some-hal = "1.2.3"
 
+[features]
+default = []
+spin-test = []
+gate-driver-test = []
+
 [dev-dependencies]
 defmt-test = "0.3"
 

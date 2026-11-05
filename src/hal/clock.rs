@@ -1,5 +1,5 @@
 use crate::hal::peripherals;
-use crate::hal::register_extras::{register_enum, RegisterExtras, RegisterField};
+use crate::hal::register_extras::{RegisterExtras, RegisterField, register_enum};
 
 register_enum! {
     #[allow(dead_code)]
@@ -50,6 +50,14 @@ const PLL_FREQUENCY_MULTIPLICATION_TOP_COUNT: u32 = 2;
 
 const PLL_ENABLE_INDEX: u32 = 24;
 const PLL_STABLE_INDEX: u32 = 25;
+const HICK_ENABLE_INDEX: u32 = 0;
+const HICK_STABLE_INDEX: u32 = 1;
+
+const AHB_DIVIDER_INDEX: u32 = 4;
+const APB1_DIVIDER_INDEX: u32 = 8;
+const APB2_DIVIDER_INDEX: u32 = 11;
+const ADC_DIVIDER_INDEX: u32 = 14;
+const ADC_DIVIDER_HIGH_BIT_INDEX: u32 = 28;
 
 register_enum! {
     enum AutoStepEnable {
@@ -73,79 +81,81 @@ register_enum! {
 
 const SYSTEM_CLOCK_STATUS_INDEX: u32 = 2;
 
-
-
 impl peripherals::Peripherals {
-    pub fn init_clock_120mhz(&mut self) {
-        let target_frequency= 120_000_000;
+    pub(super) fn init_clock_120mhz(&mut self) {
+        let target_frequency = 120_000_000;
         let crm = &self.pac.CRM;
-        // Set flash wait cycles
-        self.pac.FLASH.psr().set_register_enum(FlashWaitCycles::ThreeWait);
+        self.pac
+            .FLASH
+            .psr()
+            .set_register_enum(FlashWaitCycles::ThreeWait);
 
-        // Clear pllcfgen
+        crm.ctrl().set_bit(true, HICK_ENABLE_INDEX);
+        while !crm.ctrl().read_bit(HICK_STABLE_INDEX) {}
+
+        // Keep AHB and APB at 120 MHz; the ADC divider yields 20 MHz.
+        crm.cfg().set_bits(0, AHB_DIVIDER_INDEX, 4);
+        crm.cfg().set_bits(0, APB1_DIVIDER_INDEX, 3);
+        crm.cfg().set_bits(0, APB2_DIVIDER_INDEX, 3);
+        crm.cfg().set_bits(0b010, ADC_DIVIDER_INDEX, 2);
+        crm.cfg().set_bit(false, ADC_DIVIDER_HIGH_BIT_INDEX);
+
         crm.pll().set_bit(false, PLL_CONFIG_ENABLE_INDEX);
-
-        //  Ensure pll is using internal high speed clock
-        crm.cfg().set_register_enum(PLLReferenceClockSource::HICKDivided);
-        
-        // set pll input clock frequency
+        crm.cfg()
+            .set_register_enum(PLLReferenceClockSource::HICKDivided);
         crm.pll().set_bits(
-            pll_frequency_reference(PLL_HICK_INPUT_FREQUENCY), 
-            PLL_FREQUENCY_REFERENCE_INDEX, 
-            PLL_FREQUENCY_REFERENCE_COUNT);
-        
-        // set pll frequency multiplcation factor
-        let pll_frequency_multiplication = target_frequency / PLL_HICK_INPUT_FREQUENCY;
-        Self::set_pll_frequency_multiplication(crm, pll_frequency_multiplication);
-        
-        // enable pll
+            pll_frequency_reference(PLL_HICK_INPUT_FREQUENCY),
+            PLL_FREQUENCY_REFERENCE_INDEX,
+            PLL_FREQUENCY_REFERENCE_COUNT,
+        );
+
+        let multiplier = target_frequency / PLL_HICK_INPUT_FREQUENCY;
+        self.set_pll_frequency_multiplication(multiplier);
         crm.ctrl().set_bit(true, PLL_ENABLE_INDEX);
+        while !crm.ctrl().read_bit(PLL_STABLE_INDEX) {}
 
-        // wait for pll to be stabilised
-        while crm.ctrl().read_bit(PLL_STABLE_INDEX) == false {
-            
-        }
-
-        // Set auto step by step system clock switch enable bit
         crm.misc2().set_register_enum(AutoStepEnable::Enable);
-
-
-        // Switch system clock source to pll
-
         crm.cfg().set_register_enum(SystemClock::PLL);
-
-        // 20 nops
-        for _ in 0..20 { cortex_m::asm::nop(); }
-
-        // check system clock source is pll
-        while crm.cfg().read_bits(
-            SYSTEM_CLOCK_STATUS_INDEX,
-            SystemClock::BIT_COUNT) != SystemClock::PLL.bits() {
-            defmt::warn!("System Clock is not PLL")
+        for _ in 0..20 {
+            cortex_m::asm::nop();
         }
+        while crm
+            .cfg()
+            .read_bits(SYSTEM_CLOCK_STATUS_INDEX, SystemClock::BIT_COUNT)
+            != SystemClock::PLL.bits()
+        {}
         defmt::info!("System Clock is PLL");
 
-
-        // disable step by step switch
         crm.misc2().set_register_enum(AutoStepEnable::Disable);
-
-
-        self.clk_hz = 120_000_000;
+        self.clk_hz = target_frequency;
     }
 
-    fn set_pll_frequency_multiplication(crm: &at32f4xx_pac::Periph<at32f4xx_pac::at32f421::crm::RegisterBlock, 1073876992>, desired_factor: u32) {
-        // IDK why the datasheet is like this
-        let desired_binary = 
-            if desired_factor < 16 
-                {desired_factor - 2} 
-            else {desired_factor - 1};
-        
-        assert!((desired_factor >= 2) & (desired_factor <= 64), "Cannot achieve desired pll frequency multiplcation");
-        
-        let desired_top = desired_binary >> PLL_FREQUENCY_MULTIPLICATION_BOTTOM_COUNT;
-        let desired_bottom = desired_binary & ((0b1 << PLL_FREQUENCY_MULTIPLICATION_BOTTOM_COUNT) - 1);
-    
-        crm.cfg().set_bits(desired_top, PLL_FREQUENCY_MULTIPLICATION_TOP_INDEX, PLL_FREQUENCY_MULTIPLICATION_TOP_COUNT);
-        crm.cfg().set_bits(desired_bottom, PLL_FREQUENCY_MULTIPLICATION_BOTTOM_INDEX, PLL_FREQUENCY_MULTIPLICATION_BOTTOM_COUNT);
+    fn set_pll_frequency_multiplication(&self, desired_factor: u32) {
+        assert!(
+            (2..=64).contains(&desired_factor),
+            "Cannot achieve desired PLL frequency multiplication"
+        );
+
+        // The hardware encoding skips one multiplier code at x16.
+        let encoded_multiplier = if desired_factor < 16 {
+            desired_factor - 2
+        } else {
+            desired_factor - 1
+        };
+
+        let high_bits = encoded_multiplier >> PLL_FREQUENCY_MULTIPLICATION_BOTTOM_COUNT;
+        let low_bits = encoded_multiplier & ((1 << PLL_FREQUENCY_MULTIPLICATION_BOTTOM_COUNT) - 1);
+
+        let crm = &self.pac.CRM;
+        crm.cfg().set_bits(
+            high_bits,
+            PLL_FREQUENCY_MULTIPLICATION_TOP_INDEX,
+            PLL_FREQUENCY_MULTIPLICATION_TOP_COUNT,
+        );
+        crm.cfg().set_bits(
+            low_bits,
+            PLL_FREQUENCY_MULTIPLICATION_BOTTOM_INDEX,
+            PLL_FREQUENCY_MULTIPLICATION_BOTTOM_COUNT,
+        );
     }
 }

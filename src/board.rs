@@ -1,4 +1,3 @@
-
 use crate::bldc_driver::BLDC;
 
 pub struct Board {
@@ -7,20 +6,12 @@ pub struct Board {
 
 impl Board {
     pub fn new() -> Self {
-        
-
-        let result = Board {
-            bldc: None,
-            
-        };
+        let result = Board { bldc: None };
 
         // result.build_bldc();
-        
 
         result
     }
-
-
 
     // fn build_bldc(&mut self) {
     //     let mut bldc_pwm_config = pwm::Config::default();
@@ -79,11 +70,8 @@ impl Board {
     //     self.bldc = Some(drivers::bldc::BLDC::new(phase_a, phase_b, phase_c));
     // }
 
-    
-
     pub fn take_bldc(&mut self) -> BLDC {
         let result = self.bldc.take();
         result.expect("Already took BLDC")
     }
-
 }

@@ -2,6 +2,54 @@
 
 > Quickly set up a [`probe-rs`] + [`defmt`] + [`flip-link`] embedded project
 
+## Opt-in BLDC spin test
+
+Normal firmware does not start the motor. The `spin-test` Cargo feature deliberately
+starts a bounded test on boot; only build/flash it with the motor securely mounted,
+the prop/weapon removed, a current-limited 2S supply, and a physical power cutoff.
+The profile waits up to 5 seconds for sensorless lock, ramps duty from 8% to 18%
+over 5 seconds, holds for 1 second, ramps back to 8% over 5 seconds, then disables
+the bridge. Failure to acquire lock or a measured speed at/above 3,000 RPM stops
+the bridge. While seeking lock, the test logs a status row every 200 ms; after
+the test, the unpowered motor coasts.
+
+## Opt-in gate-driver note test
+
+The `gate-driver-test` feature plays a 1 kHz note through the motor windings by
+alternating two phases at a fixed 8% duty for at most one second. The public
+`bldc_driver::play_note(frequency_hz)` function accepts frequencies from 100 Hz
+to 5 kHz and always stops after one second. The rotor may twitch or turn. Use
+only with the prop/weapon removed, the motor securely mounted, a current-limited
+supply, and a physical power cutoff. Normal firmware does not run this test.
+
+```powershell
+cargo run --release --features gate-driver-test --bin freely_rc_v2
+```
+
+Do not enable `gate-driver-test` and `spin-test` together.
+
+The measured RPM is inferred from back-EMF zero-cross intervals for this 14-pole
+(7 pole-pair), 1700 KV motor. It is not an independent hardware overspeed cutoff,
+and this firmware does not yet log motor current or temperature. Use an external
+tachometer and current monitoring during initial tests.
+
+From PowerShell, capture the RTT/defmt output to a local log file:
+
+```powershell
+cargo run --release --features spin-test --bin freely_rc_v2 2>&1 |
+    Tee-Object -FilePath .\spin-test.log
+```
+
+The probe runner is configured to scan the MCU's 16 KiB RAM for RTT. The
+`probe-rs` range syntax uses two dots (`0x20000000..0x20004000`). Without a
+scan region, `probe-rs` does not poll RTT and application log messages are not
+displayed.
+
+The log's `spin_test,data` rows are comma-separated. Stage codes are 0=waiting
+for lock, 1=ramp up, 2=hold, 3=ramp down, 4=complete, 5=startup/operation
+failure, and 6=overspeed. Press Ctrl+C after stage 4, 5, or 6 to stop the probe
+session. Do not use the feature for routine firmware runs.
+
 [`probe-rs`]: https://crates.io/crates/probe-rs
 [`defmt`]: https://github.com/knurling-rs/defmt
 [`flip-link`]: https://github.com/knurling-rs/flip-link

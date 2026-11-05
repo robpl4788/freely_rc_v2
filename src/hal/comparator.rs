@@ -1,6 +1,5 @@
 use crate::hal::pin::{Bank, Pin};
 use crate::hal::register_extras::{RegisterExtras, register_enum};
-use at32f4xx_pac::at32f421::cmp::RegisterBlock;
 
 register_enum! {
     pub enum SpeedSelection {
@@ -34,8 +33,6 @@ register_enum! {
     index = 15
 }
 
-
-
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ComparatorConfig {
     speed_selection: SpeedSelection,
@@ -54,8 +51,6 @@ register_enum! {
     index = 7
 }
 
-
-
 register_enum! {
     pub enum InvertingSelection {
         VRefInt1_4 = 0b000,
@@ -72,9 +67,17 @@ register_enum! {
 }
 
 const COMPARATOR_VALUE_INDEX: u32 = 30;
-const SCALE_ENABLE_INDEX:u32 = 23;
-const BRIDGE_ENABLE_INDEX:u32 = 23;
-const COMPARATOR_ENABLE_INDEX:u32 = 0;
+const SCALE_ENABLE_INDEX: u32 = 23;
+const BRIDGE_ENABLE_INDEX: u32 = 22;
+const COMPARATOR_ENABLE_INDEX: u32 = 0;
+const COMPARATOR_EXINT_LINE_INDEX: u32 = 21;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComparatorEdge {
+    Rising,
+    Falling,
+    Both,
+}
 
 pub struct Comparator {
     config: ComparatorConfig,
@@ -87,14 +90,10 @@ pub struct Comparator {
 
 impl Comparator {
     pub(super) fn new() -> Comparator {
-        let register_block  = unsafe {
-            at32f4xx_pac::at32f421::CMP::steal()
-        };
-
-
+        let register_block = unsafe { at32f4xx_pac::at32f421::CMP::steal() };
 
         Comparator {
-            config: ComparatorConfig::default(),   
+            config: ComparatorConfig::default(),
             non_inverting_pin: None,
             inverting_pin: None,
             inverting_selection: InvertingSelection::default(),
@@ -104,38 +103,97 @@ impl Comparator {
     }
 
     pub fn enable(&mut self) {
-        self.register_block.ctrlsts().set_bit(true, COMPARATOR_ENABLE_INDEX);
+        self.register_block
+            .ctrlsts()
+            .set_bit(true, COMPARATOR_ENABLE_INDEX);
     }
 
     pub fn disable(&mut self) {
-        self.register_block.ctrlsts().set_bit(false, COMPARATOR_ENABLE_INDEX);
+        self.register_block
+            .ctrlsts()
+            .set_bit(false, COMPARATOR_ENABLE_INDEX);
     }
 
     pub fn apply_config(&mut self, new_config: ComparatorConfig) {
         self.config = new_config;
 
-        self.register_block.ctrlsts().set_register_enum(self.config.hysteresis);
-        self.register_block.ctrlsts().set_register_enum(self.config.speed_selection);
-        self.register_block.ctrlsts().set_register_enum(self.config.polarity);
+        self.register_block
+            .ctrlsts()
+            .set_register_enum(self.config.hysteresis);
+        self.register_block
+            .ctrlsts()
+            .set_register_enum(self.config.speed_selection);
+        self.register_block
+            .ctrlsts()
+            .set_register_enum(self.config.polarity);
     }
 
     pub fn get_value(&self) -> bool {
-        self.register_block.ctrlsts().read_bit(COMPARATOR_VALUE_INDEX)
+        self.register_block
+            .ctrlsts()
+            .read_bit(COMPARATOR_VALUE_INDEX)
+    }
+
+    pub fn enable_interrupt(&self, edge: ComparatorEdge) {
+        let exint = unsafe { at32f4xx_pac::at32f421::EXINT::steal() };
+
+        exint.inten().set_bit(false, COMPARATOR_EXINT_LINE_INDEX);
+        exint.polcfg1().set_bit(
+            matches!(edge, ComparatorEdge::Rising | ComparatorEdge::Both),
+            COMPARATOR_EXINT_LINE_INDEX,
+        );
+        exint.polcfg2().set_bit(
+            matches!(edge, ComparatorEdge::Falling | ComparatorEdge::Both),
+            COMPARATOR_EXINT_LINE_INDEX,
+        );
+        exint.intsts().write(|w| w.line21().clear_bit_by_one());
+        exint.inten().set_bit(true, COMPARATOR_EXINT_LINE_INDEX);
+
+        unsafe {
+            cortex_m::peripheral::NVIC::unmask(at32f4xx_pac::at32f421::Interrupt::ADC_CMP);
+        }
+    }
+
+    pub fn disable_interrupt(&self) {
+        let exint = unsafe { at32f4xx_pac::at32f421::EXINT::steal() };
+        exint.inten().set_bit(false, COMPARATOR_EXINT_LINE_INDEX);
+        exint.intsts().write(|w| w.line21().clear_bit_by_one());
+    }
+
+    pub fn enable_interrupt_on_change(&self) {
+        self.enable_interrupt(ComparatorEdge::Both);
     }
 
     /// Returns the pin that was the inverting reference if there was one
-    pub fn with_inverting_reference(&mut self, inverting_selection: InvertingSelection) -> Option<Pin> {
+    pub fn with_inverting_reference(
+        &mut self,
+        inverting_selection: InvertingSelection,
+    ) -> Option<Pin> {
         match inverting_selection {
             InvertingSelection::VRefInt => {
                 // Don't need the full bridge if only using the max value
-                self.register_block.ctrlsts().set_register_enum(inverting_selection);
-                self.register_block.ctrlsts().set_bit(true, SCALE_ENABLE_INDEX);
-                self.register_block.ctrlsts().set_bit(false, BRIDGE_ENABLE_INDEX);
+                self.register_block
+                    .ctrlsts()
+                    .set_register_enum(inverting_selection);
+                self.register_block
+                    .ctrlsts()
+                    .set_bit(true, SCALE_ENABLE_INDEX);
+                self.register_block
+                    .ctrlsts()
+                    .set_bit(false, BRIDGE_ENABLE_INDEX);
             }
-            InvertingSelection::VRefInt1_2 | InvertingSelection::VRefInt1_4 | InvertingSelection::VRefInt3_4 => {
-                self.register_block.ctrlsts().set_register_enum(inverting_selection);
-                self.register_block.ctrlsts().set_bit(true, SCALE_ENABLE_INDEX);
-                self.register_block.ctrlsts().set_bit(true, BRIDGE_ENABLE_INDEX);
+            InvertingSelection::VRefInt1_2
+            | InvertingSelection::VRefInt1_4
+            | InvertingSelection::VRefInt3_4 => {
+                self.register_block
+                    .ctrlsts()
+                    .set_register_enum(inverting_selection);
+                self.register_block
+                    .ctrlsts()
+                    .set_bit(true, SCALE_ENABLE_INDEX);
+                self.register_block
+                    .ctrlsts()
+                    .set_bit(true, BRIDGE_ENABLE_INDEX);
             }
             _ => {
                 panic!("Can't set comparator to use pins like this");
@@ -147,12 +205,16 @@ impl Comparator {
     }
 
     /// Returns the pin that was the non inverting reference if there was one
-    pub fn with_non_inverting_reference(&mut self, non_inverting_selection: NonInvertingSelection) -> Option<Pin> {
+    pub fn with_non_inverting_reference(
+        &mut self,
+        non_inverting_selection: NonInvertingSelection,
+    ) -> Option<Pin> {
         match non_inverting_selection {
             NonInvertingSelection::VSSA => {
                 // Don't need the full bridge if only using the max value
-                self.register_block.ctrlsts().set_register_enum(non_inverting_selection);
-                
+                self.register_block
+                    .ctrlsts()
+                    .set_register_enum(non_inverting_selection);
             }
             _ => {
                 panic!("Can't set comparator to use pins like this");
@@ -164,88 +226,129 @@ impl Comparator {
     }
 
     /// Returns the pin that was here if there was one
-    pub fn with_inverting_pin(&mut self, inverting_pin: Pin) -> Option<Pin>{
-        let old_inverting_pin = self.non_inverting_pin.take();
+    pub fn with_inverting_pin(&mut self, inverting_pin: Pin) -> Option<Pin> {
+        let inverting_pin = inverting_pin.into_analog();
+        let old_inverting_pin = self.inverting_pin.take();
         if ((inverting_pin.bank == Bank::A) & (inverting_pin.number == 0)) {
             self.inverting_selection = InvertingSelection::PinA0;
             self.inverting_pin = Some(inverting_pin);
 
-            self.register_block.ctrlsts().set_register_enum(InvertingSelection::PinA0);
-            
+            self.register_block
+                .ctrlsts()
+                .set_register_enum(InvertingSelection::PinA0);
+
             // Don't need the bridge if only using the max value
-            self.register_block.ctrlsts().set_bit(false, SCALE_ENABLE_INDEX);
-            self.register_block.ctrlsts().set_bit(false, BRIDGE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, SCALE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, BRIDGE_ENABLE_INDEX);
         } else if ((inverting_pin.bank == Bank::A) & (inverting_pin.number == 2)) {
             self.inverting_selection = InvertingSelection::PinA2;
             self.inverting_pin = Some(inverting_pin);
 
-            self.register_block.ctrlsts().set_register_enum(InvertingSelection::PinA2);
-            
+            self.register_block
+                .ctrlsts()
+                .set_register_enum(InvertingSelection::PinA2);
+
             // Don't need the bridge if only using the max value
-            self.register_block.ctrlsts().set_bit(false, SCALE_ENABLE_INDEX);
-            self.register_block.ctrlsts().set_bit(false, BRIDGE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, SCALE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, BRIDGE_ENABLE_INDEX);
         } else if ((inverting_pin.bank == Bank::A) & (inverting_pin.number == 4)) {
             self.inverting_selection = InvertingSelection::PinA4;
             self.inverting_pin = Some(inverting_pin);
 
-            self.register_block.ctrlsts().set_register_enum(InvertingSelection::PinA4);
-            
+            self.register_block
+                .ctrlsts()
+                .set_register_enum(InvertingSelection::PinA4);
+
             // Don't need the bridge if only using the max value
-            self.register_block.ctrlsts().set_bit(false, SCALE_ENABLE_INDEX);
-            self.register_block.ctrlsts().set_bit(false, BRIDGE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, SCALE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, BRIDGE_ENABLE_INDEX);
         } else if ((inverting_pin.bank == Bank::A) & (inverting_pin.number == 5)) {
             self.inverting_selection = InvertingSelection::PinA5;
             self.inverting_pin = Some(inverting_pin);
 
-            self.register_block.ctrlsts().set_register_enum(InvertingSelection::PinA5);
-            
+            self.register_block
+                .ctrlsts()
+                .set_register_enum(InvertingSelection::PinA5);
+
             // Don't need the bridge if only using the max value
-            self.register_block.ctrlsts().set_bit(false, SCALE_ENABLE_INDEX);
-            self.register_block.ctrlsts().set_bit(false, BRIDGE_ENABLE_INDEX);
-        } else{
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, SCALE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, BRIDGE_ENABLE_INDEX);
+        } else {
             panic!("Can't use this pin for the comparator inverting pin");
         }
-    
-        
-        
+
         old_inverting_pin
     }
 
     /// Returns the pin that was here if there was one
-    pub fn with_non_inverting_pin(&mut self, non_inverting_pin: Pin) -> Option<Pin>{
-        let old_non_inverting_pin = self.inverting_pin.take();
+    pub fn with_non_inverting_pin(&mut self, non_inverting_pin: Pin) -> Option<Pin> {
+        let non_inverting_pin = non_inverting_pin.into_analog();
+        let old_non_inverting_pin = self.non_inverting_pin.take();
         if ((non_inverting_pin.bank == Bank::A) & (non_inverting_pin.number == 0)) {
             self.non_inverting_selection = NonInvertingSelection::PinA0;
             self.non_inverting_pin = Some(non_inverting_pin);
 
-            self.register_block.ctrlsts().set_register_enum(self.non_inverting_selection);
-            
+            self.register_block
+                .ctrlsts()
+                .set_register_enum(self.non_inverting_selection);
+
             // Don't need the bridge if only using the max value
-            self.register_block.ctrlsts().set_bit(false, SCALE_ENABLE_INDEX);
-            self.register_block.ctrlsts().set_bit(false, BRIDGE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, SCALE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, BRIDGE_ENABLE_INDEX);
         } else if ((non_inverting_pin.bank == Bank::A) & (non_inverting_pin.number == 1)) {
-             self.non_inverting_selection = NonInvertingSelection::PinA1;
+            self.non_inverting_selection = NonInvertingSelection::PinA1;
             self.non_inverting_pin = Some(non_inverting_pin);
 
-            self.register_block.ctrlsts().set_register_enum(self.non_inverting_selection);
-            
+            self.register_block
+                .ctrlsts()
+                .set_register_enum(self.non_inverting_selection);
+
             // Don't need the bridge if only using the max value
-            self.register_block.ctrlsts().set_bit(false, SCALE_ENABLE_INDEX);
-            self.register_block.ctrlsts().set_bit(false, BRIDGE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, SCALE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, BRIDGE_ENABLE_INDEX);
         } else if ((non_inverting_pin.bank == Bank::A) & (non_inverting_pin.number == 5)) {
-             self.non_inverting_selection = NonInvertingSelection::PinA5;
+            self.non_inverting_selection = NonInvertingSelection::PinA5;
             self.non_inverting_pin = Some(non_inverting_pin);
 
-            self.register_block.ctrlsts().set_register_enum(self.non_inverting_selection);
-            
+            self.register_block
+                .ctrlsts()
+                .set_register_enum(self.non_inverting_selection);
+
             // Don't need the bridge if only using the max value
-            self.register_block.ctrlsts().set_bit(false, SCALE_ENABLE_INDEX);
-            self.register_block.ctrlsts().set_bit(false, BRIDGE_ENABLE_INDEX);
-        } else{
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, SCALE_ENABLE_INDEX);
+            self.register_block
+                .ctrlsts()
+                .set_bit(false, BRIDGE_ENABLE_INDEX);
+        } else {
             panic!("Can't use this pin for the comparator non inverting pin");
         }
-    
+
         old_non_inverting_pin
     }
-
 }

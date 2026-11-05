@@ -6,16 +6,13 @@ const GPIOF_CLK_ENABLE_INDEX: u32 = 22;
 
 impl peripherals::Peripherals {
     pub fn init_gpio(&mut self) {
-        
         // Enable clocks for gpio a b c
-        self.pac.CRM.ahben().set_bits(
-            0b111, 
-            GPIOA_CLK_ENABLE_INDEX, 
-            3);
+        self.pac
+            .CRM
+            .ahben()
+            .set_bits(0b111, GPIOA_CLK_ENABLE_INDEX, 3);
 
         // Enable clocks for gpio f
-        self.pac.CRM.ahben().set_bit(
-            true, 
-            GPIOF_CLK_ENABLE_INDEX);
+        self.pac.CRM.ahben().set_bit(true, GPIOF_CLK_ENABLE_INDEX);
     }
 }
